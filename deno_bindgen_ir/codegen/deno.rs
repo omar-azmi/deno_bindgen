@@ -50,6 +50,7 @@ impl From<Type> for TypeScriptType<'_> {
     Self(
       match value {
         Type::Void => "void",
+        Type::Bool => "boolean",
         Type::Uint8
         | Type::Uint16
         | Type::Uint32
@@ -82,6 +83,7 @@ impl From<Type> for DenoFfiType {
   fn from(value: Type) -> Self {
     let ty = match value {
       Type::Void => "void",
+      Type::Bool => "bool",
       Type::Uint8 => "u8",
       Type::Uint16 => "u16",
       Type::Uint32 => "u32",

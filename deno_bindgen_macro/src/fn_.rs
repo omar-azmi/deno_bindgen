@@ -30,6 +30,7 @@ fn parse_type(ty: &Box<syn::Type>) -> Result<Type> {
     syn::Type::Path(TypePath { ref path, .. }) => {
       if let Some(ident) = path.get_ident() {
         match ident.to_string().as_str() {
+          "bool" => return Ok(Type::Bool),
           "u8" => return Ok(Type::Uint8),
           "u16" => return Ok(Type::Uint16),
           "u32" => return Ok(Type::Uint32),

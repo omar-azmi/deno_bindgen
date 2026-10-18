@@ -13,6 +13,7 @@ pub use inventory::Inventory;
 pub enum Type {
   #[default]
   Void,
+  Bool,
   Uint8,
   Uint16,
   Uint32,
@@ -40,10 +41,18 @@ impl Type {
     }
   }
 
+  pub fn is_bool(&self) -> bool {
+    matches!(self, Self::Bool)
+  }
+
   pub fn is_number(&self) -> bool {
     !matches!(
       self,
-      Self::Void | Self::Pointer | Self::Buffer | Self::CustomType(_)
+      Self::Void
+        | Self::Bool
+        | Self::Pointer
+        | Self::Buffer
+        | Self::CustomType(_)
     )
   }
 
@@ -98,6 +107,7 @@ impl Type {
   pub fn to_ident(&self) -> syn::Expr {
     match self {
       Self::Void => parse_quote!(deno_bindgen::Type::Void),
+      Self::Bool => parse_quote!(deno_bindgen::Type::Bool),
       Self::Uint8 => parse_quote!(deno_bindgen::Type::Uint8),
       Self::Uint16 => parse_quote!(deno_bindgen::Type::Uint16),
       Self::Uint32 => parse_quote!(deno_bindgen::Type::Uint32),
@@ -119,6 +129,7 @@ impl ToTokens for Type {
   fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
     let ty = match self {
       Self::Void => quote! { () },
+      Self::Bool => quote! { bool },
       Self::Uint8 => quote! { u8 },
       Self::Uint16 => quote! { u16 },
       Self::Uint32 => quote! { u32 },
