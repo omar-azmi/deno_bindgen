@@ -37,8 +37,8 @@ impl Build {
       cmd.arg("--release");
     }
 
-    let status = cmd.status()?;
     let output = cmd.output()?;
+    let status = output.status;
     if status.success() {
       let reader = std::io::BufReader::new(output.stdout.as_slice());
       let mut artifacts = vec![];
