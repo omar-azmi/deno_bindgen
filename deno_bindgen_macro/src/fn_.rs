@@ -8,8 +8,10 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::FnArg;
+use syn::GenericArgument;
 use syn::ItemFn;
 use syn::PatType;
+use syn::PathArguments;
 use syn::ReturnType;
 use syn::TypePath;
 use syn::TypePtr;
@@ -45,6 +47,19 @@ fn parse_type(ty: &Box<syn::Type>) -> Result<Type> {
           "isize" => return Ok(Type::Int64),
           ty_str => {
             return Ok(custom_type(ty_str));
+          }
+        }
+      }
+
+      if (path.segments.len() == 1 && path.segments[0].ident == "Option") {
+        if let PathArguments::AngleBracketed(arguments) =
+          &path.segments[0].arguments
+        {
+          if let Some(GenericArgument::Type(inner)) = arguments.args.first() {
+            let inner = parse_type(&Box::new(inner.clone()))?;
+            if matches!(inner, Type::Pointer | Type::CustomType(_)) {
+              return Ok(Type::Optional(Box::leak(Box::new(inner))));
+            }
           }
         }
       }

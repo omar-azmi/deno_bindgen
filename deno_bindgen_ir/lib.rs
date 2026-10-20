@@ -27,7 +27,12 @@ pub enum Type {
   Pointer,
   Buffer,
 
+  /// signifies any custom struct type, which gets mapped to a pointer type.
   CustomType(&'static str),
+
+  /// signifies any [Type] that is wrapped in an [Option]. i.e. `Option<Type>`.
+  /// under the hood, it will get transformed to a nullable-pointer type.
+  Optional(&'static Type),
 }
 
 pub type RawTypes = &'static [Type];
@@ -37,6 +42,10 @@ impl Type {
     match self {
       Self::Buffer => &[Self::Pointer, Self::Uint32],
       Self::Pointer | Self::CustomType(..) => &[Self::Pointer],
+      Self::Optional(value) => match value {
+        Self::Pointer | Self::CustomType(..) => &[Self::Pointer],
+        _ => &[],
+      },
       _ => &[],
     }
   }
@@ -71,6 +80,7 @@ impl Type {
           };
         })
       }
+
       Self::CustomType(_) => {
         let pointer = &args[0];
         Some(quote! {
@@ -78,6 +88,20 @@ impl Type {
           let #name = unsafe { &mut *(#pointer as *mut _) };
         })
       }
+
+      Self::Optional(value) => {
+        let pointer = &args[0];
+        let value = Some(match value {
+          Self::CustomType(_) => quote! { unsafe { &*(#pointer as *const _) } },
+          Self::Pointer => quote! { #pointer as _ },
+          _ => unreachable!(),
+        });
+
+        Some(quote! {
+          let #name = if #pointer.is_null() { None } else { #value };
+        })
+      }
+
       Self::Pointer => {
         let pointer = &args[0];
         Some(quote! {
@@ -97,9 +121,27 @@ impl Type {
       Self::Pointer => Some(quote! {
         let #name = #arg as _;
       }),
+
       Self::CustomType(_) => Some(quote! {
         let #name = Box::into_raw(Box::new(#arg)) as *mut _;
       }),
+
+      Self::Optional(inner) => {
+        let value = match inner {
+          Self::CustomType(_) => quote! {
+            Box::into_raw(Box::new(value)) as *mut _
+          },
+          Self::Pointer => quote! { value as _ },
+          _ => unreachable!(),
+        };
+
+        Some(quote! {
+          let #name = match #arg {
+            Some(value) => #value,
+            None => std::ptr::null_mut(),
+          };
+        })
+      }
       _ => None,
     }
   }
@@ -121,6 +163,10 @@ impl Type {
       Self::Pointer => parse_quote!(deno_bindgen::Type::Pointer),
       Self::Buffer => parse_quote!(deno_bindgen::Type::Buffer),
       Self::CustomType(s) => parse_quote!(deno_bindgen::Type::CustomType(#s)),
+      Self::Optional(inner) => {
+        let inner_expr = inner.to_ident();
+        parse_quote!(deno_bindgen::Type::Optional(&#inner_expr))
+      }
     }
   }
 }
@@ -140,8 +186,9 @@ impl ToTokens for Type {
       Self::Int64 => quote! { i64 },
       Self::Float32 => quote! { f32 },
       Self::Float64 => quote! { f64 },
-      Self::CustomType(_) | Self::Pointer => quote! { *const () },
       Self::Buffer => quote! { *mut u8 },
+      Self::CustomType(_) | Self::Pointer => quote! { *const () },
+      Self::Optional(_) => quote! { *const () },
     };
 
     tokens.extend(ty);

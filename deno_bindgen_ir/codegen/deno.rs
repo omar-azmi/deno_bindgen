@@ -8,65 +8,117 @@ use crate::inventory::Inventory;
 use crate::inventory::Struct;
 use crate::Type;
 
-// (ident, is_custom_type)
-struct TypeScriptType<'a>(&'a str, bool);
+struct TypeScriptType<'a> {
+  ty: Cow<'a, str>,
+  is_custom_type: bool,
+  is_optional: bool,
+}
 
 impl std::fmt::Display for TypeScriptType<'_> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.write_str(&self.0)?;
+    f.write_str(&self.ty)?;
     Ok(())
   }
 }
 
+const option_type_typescript_suffix: &str = " | undefined";
+
 impl TypeScriptType<'_> {
   fn into_raw<'a>(&self, ident: &'a str) -> Cow<'a, str> {
+    if self.is_optional && self.is_custom_type {
+      return Cow::Owned(format!("{ident} === undefined ? null : {ident}.ptr"));
+    }
+    if self.is_optional {
+      return Cow::Owned(format!("{ident} === undefined ? null : {ident}"));
+    }
+
     match self {
-      Self("Uint8Array", false) => {
+      _ if self.ty == "Uint8Array" && !self.is_custom_type => {
         Cow::Owned(format!("{ident},\n    {ident}.byteLength"))
       }
-      Self(_, true) => Cow::Owned(format!("{ident}.ptr")),
+      Self {
+        is_custom_type: true,
+        ..
+      } => Cow::Owned(format!("{ident}.ptr")),
       _ => Cow::Borrowed(ident),
     }
   }
 
   fn from_raw<'a>(&self, ident: &'a str) -> Option<String> {
     match self {
-      Self(ty_str, true) => Some(format!("{ty_str}.__constructor({ident})")),
+      Self {
+        ty,
+        is_custom_type: true,
+        is_optional: true,
+      } => {
+        let custom_type =
+          ty.strip_suffix(option_type_typescript_suffix).unwrap_or(ty);
+        Some(format!(
+          "{ident} === null ? undefined : {custom_type}.__constructor({ident})"
+        ))
+      }
+
+      Self {
+        ty,
+        is_custom_type: true,
+        is_optional: false,
+      } => Some(format!("{ty}.__constructor({ident})")),
+
+      Self {
+        is_custom_type: false,
+        is_optional: true,
+        ..
+      } => Some(format!("{ident} === null ? undefined : {ident}")),
       _ => None,
     }
   }
 
   fn apply_promise(&self, non_blocking: bool) -> Cow<'_, str> {
     if non_blocking {
-      Cow::Owned(format!("Promise<{}>", self.0))
+      Cow::Owned(format!("Promise<{}>", self.ty))
     } else {
-      Cow::Borrowed(self.0)
+      Cow::Borrowed(self.ty.as_ref())
     }
   }
 }
 
 impl From<Type> for TypeScriptType<'_> {
   fn from(value: Type) -> Self {
-    Self(
-      match value {
-        Type::Void => "void",
-        Type::Bool => "boolean",
-        Type::Uint8
-        | Type::Uint16
-        | Type::Uint32
-        | Type::Uint64
-        | Type::Int8
-        | Type::Int16
-        | Type::Int32
-        | Type::Int64
-        | Type::Float32
-        | Type::Float64 => "number",
-        Type::Pointer => "Deno.PointerObject | null",
-        Type::Buffer => "Uint8Array",
-        Type::CustomType(name) => name,
+    match value {
+      Type::Optional(inner) => {
+        let inner = Self::from(*inner);
+        Self {
+          ty: Cow::Owned(format!(
+            "{}{option_type_typescript_suffix}",
+            inner.ty,
+          )),
+          is_custom_type: inner.is_custom_type,
+          is_optional: true,
+        }
+      }
+      value => Self {
+        ty: Cow::Borrowed(match value {
+          Type::Void => "void",
+          Type::Bool => "boolean",
+          Type::Uint8
+          | Type::Uint16
+          | Type::Uint32
+          | Type::Uint64
+          | Type::Int8
+          | Type::Int16
+          | Type::Int32
+          | Type::Int64
+          | Type::Float32
+          | Type::Float64 => "number",
+          Type::Pointer => "Deno.PointerObject | null",
+          Type::Buffer => "Uint8Array",
+          Type::CustomType(name) => name,
+          Type::Optional(_) => unreachable!(),
+        }),
+        is_custom_type: matches!(value, Type::CustomType(_)),
+        is_optional: false,
       },
-      matches!(value, Type::CustomType(_)),
-    )
+    }
   }
 }
 
@@ -96,6 +148,7 @@ impl From<Type> for DenoFfiType {
       Type::Float64 => "f64",
       Type::CustomType(..) | Type::Pointer => "pointer",
       Type::Buffer => "buffer",
+      Type::Optional(..) => "pointer",
     };
 
     let mut raw = format!("'{}'", ty);
@@ -259,8 +312,13 @@ impl<'a> Codegen<'a> {
               for (i, parameter) in parameters.iter().enumerate() {
                 writeln!(
                   writer,
-                  "  arg{}: {},",
+                  "  arg{}{}: {},",
                   i,
+                  if matches!(parameter, Type::Optional(_)) {
+                    "?"
+                  } else {
+                    ""
+                  },
                   TypeScriptType::from(*parameter)
                 )?;
               }
@@ -357,7 +415,16 @@ impl<'a> Codegen<'a> {
                     .iter()
                     .enumerate()
                     .map(|(i, parameter)| {
-                      format!("arg{}: {}", i, TypeScriptType::from(*parameter))
+                      format!(
+                        "arg{}{}: {}",
+                        i,
+                        if matches!(parameter, Type::Optional(_)) {
+                          "?"
+                        } else {
+                          ""
+                        },
+                        TypeScriptType::from(*parameter)
+                      )
                     })
                     .collect::<Vec<_>>()
                     .join(", "),
