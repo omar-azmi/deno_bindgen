@@ -2,6 +2,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::format_ident;
 use syn::parse_quote;
 use syn::punctuated::Punctuated;
+use syn::GenericArgument;
+use syn::GenericParam;
 use syn::ImplItemFn;
 use syn::ItemImpl;
 
@@ -9,12 +11,13 @@ use crate::util::Result;
 use crate::util::{self};
 
 pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
-  if impl_.generics.params.first().is_some() {
+  if impl_
+    .generics
+    .params
+    .iter()
+    .any(|param| !matches!(param, GenericParam::Lifetime(_)))
+  {
     return Err(util::Error::Generics);
-  }
-
-  if impl_.generics.where_clause.is_some() {
-    return Err(util::Error::WhereClause);
   }
 
   let self_ty = match *impl_.self_ty {
@@ -22,7 +25,23 @@ pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
     _ => return Err(util::Error::UnsupportedType),
   };
 
-  let ref ty_str @ _ = self_ty.get_ident().unwrap();
+  let ty_str = self_ty
+    .segments
+    .last()
+    .map(|segment| segment.ident.clone())
+    .ok_or(util::Error::UnsupportedType)?;
+  let mut ffi_self_ty = self_ty.clone();
+  for segment in &mut ffi_self_ty.segments {
+    if let syn::PathArguments::AngleBracketed(arguments) =
+      &mut segment.arguments
+    {
+      for argument in &mut arguments.args {
+        if matches!(argument, GenericArgument::Lifetime(_)) {
+          *argument = parse_quote!('static);
+        }
+      }
+    }
+  }
 
   let mut methods = Vec::new();
   let mut syms = Punctuated::<TokenStream2, syn::Token![,]>::new();
@@ -68,7 +87,7 @@ pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
 
           parse_quote! {
             #[allow(non_snake_case)]
-            fn #mangled_name (self_: *mut #ty_str, #(#inputs),*) #out {
+            fn #mangled_name (self_: *mut #ffi_self_ty, #(#inputs),*) #out {
               let self_ = unsafe { &mut *self_ };
               self_. #method_name (#(#idents),*)
             }
@@ -113,7 +132,7 @@ pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
     let ident = format_ident!("__{}_dealloc", ty_str);
     let dispose = parse_quote! {
       #[allow(non_snake_case)]
-      fn #ident(self_: *mut #ty_str) {
+      fn #ident(self_: *mut #ffi_self_ty) {
         if self_.is_null() {
           return;
         }
@@ -140,7 +159,7 @@ pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
     const _: () = {
       // Assert that the type implements `BindgenType`.
       const fn _assert_impl<T: ::deno_bindgen::BindgenType>() {}
-      _assert_impl::<#ty_str>();
+      _assert_impl::<#ffi_self_ty>();
 
       #[deno_bindgen::linkme::distributed_slice(deno_bindgen::INVENTORY)]
       pub static _B: deno_bindgen::Inventory = deno_bindgen::Inventory::Struct(

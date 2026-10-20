@@ -7,6 +7,7 @@ const _: () = {
         non_blocking: false,
         internal: false,
         is_constructor: false,
+        is_static: false,
     });
 };
 #[no_mangle]

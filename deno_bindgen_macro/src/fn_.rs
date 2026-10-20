@@ -64,6 +64,11 @@ fn parse_type(ty: &Box<syn::Type>) -> Result<Type> {
         }
       }
 
+      if path.segments.len() == 1 {
+        let ident = path.segments[0].ident.to_string();
+        return Ok(custom_type(&ident));
+      }
+
       Err(Error::UnsupportedType)
     }
     syn::Type::Reference(TypeReference { ref elem, .. }) => {
