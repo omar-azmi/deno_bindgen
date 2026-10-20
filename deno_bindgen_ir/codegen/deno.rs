@@ -396,7 +396,7 @@ impl<'a> Codegen<'a> {
               for method in methods {
                 let mut parameters = method.parameters;
 
-                if !method.is_constructor {
+                if !method.is_constructor && !method.is_static {
                   // Skip the self ptr argument.
                   parameters = &method.parameters[1..];
                 }
@@ -409,7 +409,8 @@ impl<'a> Codegen<'a> {
 
                 write!(
                   writer,
-                  "\n  {name}({parameters})",
+                  "\n  {}{name}({parameters})",
+                  if method.is_static { "static " } else { "" },
                   name = method_name,
                   parameters = parameters
                     .iter()
@@ -443,9 +444,9 @@ impl<'a> Codegen<'a> {
                 format_paren(
                   writer,
                   parameters,
-                  !method.is_constructor,
+                  !method.is_constructor && !method.is_static,
                   |writer, parameters| {
-                    if !method.is_constructor {
+                    if !method.is_constructor && !method.is_static {
                       writeln!(writer, "      this.ptr,",)?;
                     }
 

@@ -60,7 +60,8 @@ pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
             .collect::<Vec<_>>()
         }
 
-        let method = if sig.receiver().is_some() {
+        let has_receiver = sig.receiver().is_some();
+        let method = if has_receiver {
           let idents = idents_with_skip(inputs.clone(), 1);
           // First argument is the receiver, we skip it.
           let inputs = inputs.skip(1);
@@ -72,7 +73,7 @@ pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
               self_. #method_name (#(#idents),*)
             }
           }
-        } else if is_constructor {
+        } else if is_constructor || !has_receiver {
           let idents = idents_with_skip(inputs.clone(), 0);
           parse_quote!(
             #[allow(non_snake_case)]
@@ -96,6 +97,9 @@ pub fn handle(mut impl_: ItemImpl) -> Result<TokenStream2> {
         // Set method name to the original name as the
         // managed name is used for the internal symbol.
         sym.set_name(method_name);
+        if !is_constructor && !has_receiver {
+          sym.is_static(true);
+        }
 
         methods.push(generated);
         syms.push(quote::quote! { #sym });

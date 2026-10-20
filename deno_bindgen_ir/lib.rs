@@ -203,6 +203,7 @@ pub struct Symbol {
   pub non_blocking: bool,
   pub internal: bool,
   pub is_constructor: bool,
+  pub is_static: bool,
 }
 
 pub struct SymbolBuilder {
@@ -212,6 +213,7 @@ pub struct SymbolBuilder {
   non_blocking: bool,
   internal: bool,
   is_constructor: bool,
+  is_static: bool,
 }
 
 impl SymbolBuilder {
@@ -223,6 +225,7 @@ impl SymbolBuilder {
       non_blocking: false,
       internal: false,
       is_constructor: false,
+      is_static: false,
     }
   }
 
@@ -249,6 +252,10 @@ impl SymbolBuilder {
   pub fn is_constructor(&mut self, is_constructor: bool) {
     self.is_constructor = is_constructor;
   }
+
+  pub fn is_static(&mut self, is_static: bool) {
+    self.is_static = is_static;
+  }
 }
 
 impl ToTokens for SymbolBuilder {
@@ -263,6 +270,7 @@ impl ToTokens for SymbolBuilder {
     let name = &self.name;
     let internal = &self.internal;
     let is_constructor = &self.is_constructor;
+    let is_static = &self.is_static;
 
     tokens.extend(quote! {
        deno_bindgen::Symbol {
@@ -272,6 +280,7 @@ impl ToTokens for SymbolBuilder {
           non_blocking: #non_blocking,
           internal: #internal,
           is_constructor: #is_constructor,
+          is_static: #is_static,
        }
     });
   }
